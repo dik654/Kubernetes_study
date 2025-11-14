@@ -567,6 +567,215 @@ Storacha (web3.storage) 생태계의 전체 아키텍처, 데이터 저장/관�
 
 ---
 
+## 🌐 Phase 10: Applications & Use Cases Deep Dive
+
+### 10.1 Console (Dashboard Application)
+- [ ] **29_Console_Application_Analysis.md** 작성
+  - [ ] Console 개요 및 목적
+  - [ ] Next.js 아키텍처 분석:
+    - [ ] 페이지 구조 (`app/page.tsx`)
+    - [ ] 라우팅 및 네비게이션
+    - [ ] 서버/클라이언트 컴포넌트 구분
+  - [ ] Storacha 서비스 통합:
+    - [ ] w3up 서비스 연결 설정
+    - [ ] DID 설정 및 인증
+    - [ ] 환경 변수 구성
+  - [ ] 주요 기능 구현:
+    - [ ] 파일 업로드 UI 및 로직
+    - [ ] Space 관리 인터페이스
+    - [ ] 업로드 히스토리 표시
+    - [ ] 사용량 대시보드
+  - [ ] 브라우저 기반 업로드 메커니즘:
+    - [ ] File API 활용
+    - [ ] 청크 업로드 처리
+    - [ ] 진행률 표시
+  - [ ] 에러 모니터링 (Sentry):
+    - [ ] 클라이언트/서버/엣지 설정
+    - [ ] 에러 추적 및 보고
+  - [ ] 배포 및 마이그레이션:
+    - [ ] upload-service 레포로 이전 과정
+    - [ ] 배포 환경 설정
+
+### 10.2 w3link (IPFS Gateway)
+- [ ] **30_W3link_Gateway_Analysis.md** 작성
+  - [ ] w3link 개요 및 목적
+  - [ ] 아키텍처 설계:
+    - [ ] "Caching layer" 컨셉
+    - [ ] Public gateway 위에서 동작하는 방식
+  - [ ] CloudFlare Workers 구현:
+    - [ ] Edge-gateway-link 패키지 분석
+    - [ ] Worker 코드 구조
+    - [ ] 전역 배포 메커니즘
+  - [ ] 콘텐츠 검색 방식:
+    - [ ] Path-style: `https://w3s.link/ipfs/{cid}`
+    - [ ] Subdomain-style: `https://{CID}.ipfs.w3s.link/`
+  - [ ] Caching 메커니즘:
+    - [ ] Edge 캐시 전략
+    - [ ] TTL 설정
+    - [ ] Cache invalidation
+  - [ ] Parallel Gateway Requests:
+    - [ ] 여러 public gateway 동시 요청
+    - [ ] 가장 빠른 응답 선택 로직
+    - [ ] Fallback 처리
+  - [ ] Performance 최적화:
+    - [ ] Rate limiting (200 req/min)
+    - [ ] IP 기반 제한
+    - [ ] 부하 분산
+  - [ ] 모니터링 및 메트릭:
+    - [ ] 캐시 히트율
+    - [ ] 응답 시간 측정
+    - [ ] Gateway 가용성 추적
+
+### 10.3 w3ui (UI Components Library)
+- [ ] **31_W3ui_Components_Analysis.md** 작성
+  - [ ] w3ui 개요 및 철학
+  - [ ] Headless 컴포넌트 설계:
+    - [ ] Type-safe 아키텍처
+    - [ ] 프레임워크 독립적 설계
+  - [ ] 패키지 구조:
+    - [ ] `packages/` 디렉토리 분석
+    - [ ] React 컴포넌트 패키지
+    - [ ] Vanilla JS 모듈
+  - [ ] 프레임워크별 구현:
+    - [ ] React 컴포넌트
+    - [ ] Solid 컴포넌트
+    - [ ] Vue 컴포넌트
+  - [ ] 핵심 컴포넌트 분석:
+    - [ ] **인증 컴포넌트**:
+      - [ ] 이메일 인증 플로우
+      - [ ] 개인키 생성 및 관리
+      - [ ] 세션 관리
+    - [ ] **업로드 컴포넌트**:
+      - [ ] 단일 파일 업로드
+      - [ ] 디렉토리 업로드
+      - [ ] 드래그 앤 드롭
+      - [ ] 진행률 표시
+    - [ ] **Space 관리 컴포넌트**:
+      - [ ] Space 생성/선택
+      - [ ] Space 공유
+    - [ ] **업로드 리스트 컴포넌트**:
+      - [ ] 업로드 히스토리
+      - [ ] 필터링 및 검색
+  - [ ] 상태 관리:
+    - [ ] 로컬 상태 관리 패턴
+    - [ ] 컨텍스트 활용
+  - [ ] 예시 애플리케이션:
+    - [ ] Sign up/Sign in 예시
+    - [ ] Simple File Upload 예시
+    - [ ] Advanced Upload 예시
+  - [ ] 통합 가이드:
+    - [ ] 프로젝트에 추가하기
+    - [ ] 커스터마이징
+    - [ ] 스타일링
+  - [ ] TypeScript 타입 정의
+  - [ ] 문서화 웹사이트 (w3ui-website)
+
+### 10.4 dag.w3s.link (Trustless Gateway)
+- [ ] **32_Trustless_Gateway_Analysis.md** 작성
+  - [ ] Trustless Gateway 개념
+  - [ ] IPFS Trustless Gateway 스펙:
+    - [ ] 스펙 문서 분석
+    - [ ] 표준 준수 사항
+  - [ ] dag.w3s.link 구현:
+    - [ ] Graph API 제공
+    - [ ] 레포지토리 구조
+    - [ ] 핵심 기능 구현
+  - [ ] CAR 요청 처리:
+    - [ ] `dag-scope` 파라미터 (block/entity/all)
+    - [ ] DAG 형태 정의
+    - [ ] 포함될 블록 결정
+  - [ ] `dups` 파라미터:
+    - [ ] 중복 블록 처리
+    - [ ] Deterministic 블록 순서
+  - [ ] 검증 가능한 콘텐츠 접근:
+    - [ ] Trustless 검증 메커니즘
+    - [ ] 크립토그래픽 증명
+  - [ ] w3s.link와의 차이점:
+    - [ ] Graph API 전용 vs 범용 gateway
+    - [ ] 사용 사례 비교
+  - [ ] 성능 고려사항
+  - [ ] 보안 및 신뢰성
+
+### 10.5 Real-World Applications & Integration Examples
+- [ ] **33_Real_World_Applications.md** 작성
+  - [ ] 게임 산업:
+    - [ ] **Unreal Engine 플러그인**:
+      - [ ] Progressive game install
+      - [ ] 게임 바이너리 배포
+      - [ ] Content-addressed storage 활용
+      - [ ] 사용자 소유 게임 에셋
+      - [ ] 구현 아키텍처
+    - [ ] 게임 에셋 관리
+    - [ ] Multiplayer 데이터 동기화
+  - [ ] AI & Machine Learning:
+    - [ ] **elizaOS 통합**:
+      - [ ] AI 에이전트 persistent memory
+      - [ ] 분산 웹에서 데이터 저장/공유
+      - [ ] 검증 가능한 AI 메모리
+      - [ ] 통합 아키텍처 및 API
+    - [ ] 모델 저장 및 버전 관리
+    - [ ] 학습 데이터셋 아카이빙
+  - [ ] NFT & Digital Assets:
+    - [ ] NFT 메타데이터 저장:
+      - [ ] JSON 메타데이터 구조
+      - [ ] 이미지 및 미디어 저장
+      - [ ] Immutable 참조
+    - [ ] **Courtyard** (Pokémon 카드):
+      - [ ] 물리적 수집품 토큰화
+      - [ ] 검증 및 저장 프로세스
+    - [ ] 디지털 아트 저장
+    - [ ] 로열티 및 라이선싱
+  - [ ] Supply Chain & Logistics:
+    - [ ] 제품 추적 및 검증
+    - [ ] 원산지 증명
+    - [ ] 메타데이터 저장
+    - [ ] 럭셔리 브랜드 활용 (Louis Vuitton, Gucci)
+  - [ ] 분산 웹 호스팅:
+    - [ ] 정적 웹사이트 배포
+    - [ ] SPA (Single Page App) 호스팅
+    - [ ] CDN 활용
+    - [ ] 도메인 연결
+  - [ ] 데이터 아카이빙:
+    - [ ] 장기 데이터 보존
+    - [ ] 규제 준수 (compliance)
+    - [ ] 백업 전략
+  - [ ] 협업 및 공유:
+    - [ ] 팀 간 파일 공유
+    - [ ] 버전 관리
+    - [ ] 접근 권한 제어
+  - [ ] CI/CD 통합:
+    - [ ] GitHub Actions (add-to-web3)
+    - [ ] 빌드 아티팩트 저장
+    - [ ] 배포 자동화
+  - [ ] 각 사례별 코드 예시 및 구현 패턴
+
+### 10.6 Integration Patterns & Best Practices
+- [ ] **34_Integration_Patterns.md** 작성
+  - [ ] Frontend 통합 패턴:
+    - [ ] React 앱 통합
+    - [ ] Vue 앱 통합
+    - [ ] Vanilla JS 통합
+  - [ ] Backend 통합 패턴:
+    - [ ] Node.js 서버
+    - [ ] Express 미들웨어
+    - [ ] GraphQL 서버
+  - [ ] 모바일 앱 통합:
+    - [ ] React Native
+    - [ ] 하이브리드 앱
+  - [ ] 서버리스 함수 통합:
+    - [ ] AWS Lambda
+    - [ ] Cloudflare Workers
+    - [ ] Vercel Functions
+  - [ ] 베스트 프랙티스:
+    - [ ] 에러 처리
+    - [ ] 재시도 로직
+    - [ ] 진행률 추적
+    - [ ] 메모리 관리
+    - [ ] 성능 최적화
+  - [ ] Anti-patterns 및 주의사항
+
+---
+
 ## 🔄 지속적인 업데이트
 
 - [ ] 레포지토리 변경사항 모니터링
@@ -574,6 +783,7 @@ Storacha (web3.storage) 생태계의 전체 아키텍처, 데이터 저장/관�
 - [ ] 버그 픽스 반영
 - [ ] 커뮤니티 피드백 통합
 - [ ] 문서 품질 개선
+- [ ] 활용 사례 추가 및 업데이트
 
 ---
 
@@ -633,6 +843,7 @@ async function uploadFile(file, options = {}) {
 ### P1 (높음)
 1. Phase 2: 컴포넌트별 상세 구현 (04-07)
 2. Phase 3: 구현 세부사항 (08-11)
+3. Phase 10: Applications & Use Cases Deep Dive (29-34) - **NEW**
 
 ### P2 (중간)
 1. Phase 4: 실전 가이드 (12-14)
@@ -647,9 +858,16 @@ async function uploadFile(file, options = {}) {
 
 ## 📊 진행 상황 트래킹
 
-- **전체 진행률**: 2 / 85+ 작업 (약 2%)
-- **완료된 Phase**: 0 / 9
+- **전체 진행률**: 2 / 100+ 작업 (약 2%)
+- **완료된 Phase**: 0 / 10
 - **진행 중인 Phase**: Phase 1 준비
+- **새로 추가된 문서**: 6개 (Phase 10)
+  - Console Application Analysis
+  - w3link Gateway Analysis
+  - w3ui Components Analysis
+  - Trustless Gateway Analysis
+  - Real-World Applications
+  - Integration Patterns
 - **예상 완료일**: TBD
 - **마지막 업데이트**: 2025-11-14
 

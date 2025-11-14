@@ -6,13 +6,44 @@ Storacha (web3.storage) 생태계의 전체 아키텍처, 데이터 저장/관�
 ## 분석 범위
 
 ### 1. 핵심 레포지토리
+
+#### 1.1 코어 서비스 레포지토리
 - **upload-service** (github.com/storacha/upload-service) - 활성 개발 중인 메인 서비스
-- **w3up** (github.com/storacha/w3up) - UCAN 프로토콜 구현 (deprecated, 하지만 참조용)
+  - 2,510+ commits, 36 contributors
+  - pnpm monorepo (Node.js v18+)
+  - TypeScript 19.7%, JavaScript 79.5%
+- **w3up** (github.com/storacha/w3up) - UCAN 프로토콜 구현 (deprecated, 참조용)
+  - upload-service로 마이그레이션 완료
+  - 484 releases, 29+ contributors
+  - 백포팅 목적으로 유지
 - **w3infra** (github.com/storacha/w3infra) - 인프라스트럭처 및 서버사이드 구현
+  - SST (Serverless Stack) 기반
+  - AWS Lambda, DynamoDB, S3, R2
+  - seed.run으로 배포 관리
 - **specs** (github.com/storacha/specs) - 프로토콜 스펙 문서들
-- **w3link** (github.com/storacha-network/w3link) - IPFS 게이트웨이
+  - 18+ specification documents
+  - w3-account, w3-session, w3-store, w3-filecoin 등
+
+#### 1.2 애플리케이션 레포지토리
 - **console** (github.com/storacha/console) - 웹 대시보드
-- **w3ui** (github.com/storacha/w3ui) - UI 컴포넌트
+  - 2025년 7월 archived (upload-service로 이전)
+  - Next.js (TypeScript 97.3%)
+  - Tailwind CSS, Sentry 통합
+  - 183 commits, 13 contributors
+- **w3ui** (github.com/storacha/w3ui) - UI 컴포넌트 라이브러리
+  - Headless, type-safe UI 컴포넌트
+  - React, Solid, Vue 지원
+  - pnpm monorepo 구조
+  - 63 stars, MIT + Apache 2.0
+- **w3link** (github.com/storacha/w3link) - IPFS 게이트웨이
+  - CloudFlare Workers 기반
+  - Caching layer (public gateway 위)
+  - Parallel gateway requests
+  - 23 stars, 21 releases, 78 commits
+- **dag.w3s.link** (github.com/storacha/dag.w3s.link) - Trustless Gateway
+  - IPFS Trustless Gateway 스펙 구현
+  - Graph API 전용
+  - CAR 요청 처리 (dag-scope 파라미터)
 
 ### 2. 핵심 개념 및 컴포넌트
 
@@ -118,6 +149,80 @@ Storacha는 다음과 같은 capability 기반 권한을 사용:
 - **store/add**: (legacy) 저장 작업
 - **space/blob/add**: Space 내 블롭 추가
 
+### 8. 애플리케이션 및 활용 사례
+
+#### 8.1 Console (웹 대시보드)
+- **목적**: 브라우저 기반 파일 업로드 및 Space 관리
+- **기술**: Next.js, TypeScript, Tailwind CSS, Sentry
+- **특징**:
+  - w3up 서비스 통합 (`https://up.web3.storage`)
+  - 환경 변수로 다른 w3up 인스턴스 연결 가능
+  - 브라우저 File API 활용
+  - 2025년 upload-service로 마이그레이션
+
+#### 8.2 w3link (IPFS Gateway)
+- **목적**: IPFS 콘텐츠를 빠르게 제공하는 캐싱 레이어
+- **기술**: CloudFlare Workers, Edge Computing
+- **아키텍처**:
+  - Public IPFS gateway 위의 caching layer
+  - 전역 분산 (serverless code)
+  - Parallel gateway requests (가장 빠른 응답 사용)
+- **성능**:
+  - Rate limiting: 200 req/min per IP
+  - 30초 블록 (rate limit 초과 시)
+- **접근 방식**:
+  - Path-style: `https://w3s.link/ipfs/{cid}`
+  - Subdomain-style: `https://{CID}.ipfs.w3s.link/`
+
+#### 8.3 w3ui (UI 컴포넌트)
+- **목적**: 재사용 가능한 headless UI 컴포넌트
+- **기술**: TypeScript, React, Solid, Vue
+- **설계 철학**: Headless, Type-safe, Framework-agnostic
+- **주요 컴포넌트**:
+  - Sign up/Sign in (이메일 인증, 개인키 생성)
+  - File Upload (단일/다중, 드래그앤드롭)
+  - Uploads List (업로드 히스토리)
+  - Space Management (생성, 선택, 공유)
+- **예시 앱**: React, Svelte, Vue 프레임워크별 데모
+
+#### 8.4 dag.w3s.link (Trustless Gateway)
+- **목적**: 검증 가능한 IPFS 콘텐츠 접근
+- **스펙**: IPFS Trustless Gateway Specification
+- **특징**:
+  - Graph API 전용
+  - `dag-scope` 파라미터 (block/entity/all)
+  - `dups` 파라미터 (중복 블록 처리)
+  - CAR 응답 형식
+  - Cryptographic verification
+
+#### 8.5 실제 활용 사례
+
+**게임 산업:**
+- Unreal Engine 플러그인
+- Progressive game install
+- Content-addressed 게임 바이너리 배포
+- 사용자 소유 게임 에셋
+
+**AI & Machine Learning:**
+- elizaOS: AI 에이전트의 persistent, verifiable memory
+- 분산 웹에서 데이터 저장 및 공유
+- 모델 저장 및 버전 관리
+
+**NFT & Digital Assets:**
+- NFT 메타데이터 저장 (JSON, 이미지, 미디어)
+- Courtyard: 물리적 수집품(Pokémon 카드) 토큰화
+- Immutable 참조 보장
+
+**Supply Chain:**
+- 제품 추적 및 검증
+- 원산지 증명
+- 럭셔리 브랜드 활용 (Louis Vuitton, Gucci)
+
+**기타:**
+- 분산 웹사이트 호스팅
+- 데이터 아카이빙
+- CI/CD 통합 (GitHub Actions)
+
 ## 문서 구조
 
 본 분석 문서는 다음과 같은 구조로 작성됩니다:
@@ -144,6 +249,14 @@ Storacha는 다음과 같은 capability 기반 권한을 사용:
 13. **12_Development_Guide.md** - 개발 환경 설정 및 가이드
 14. **13_Deployment_Operations.md** - 배포 및 운영 가이드
 15. **14_API_Reference.md** - 전체 API 레퍼런스
+
+### 애플리케이션 및 활용 사례 분석
+16. **29_Console_Application_Analysis.md** - Console 대시보드 구현 분석
+17. **30_W3link_Gateway_Analysis.md** - w3link IPFS Gateway 구조
+18. **31_W3ui_Components_Analysis.md** - w3ui UI 컴포넌트 라이브러리
+19. **32_Trustless_Gateway_Analysis.md** - dag.w3s.link Trustless Gateway
+20. **33_Real_World_Applications.md** - 실제 활용 사례 및 통합 예시
+21. **34_Integration_Patterns.md** - 통합 패턴 및 베스트 프랙티스
 
 ## 분석 방법론
 
@@ -225,10 +338,12 @@ Storacha는 다음과 같은 capability 기반 권한을 사용:
   - specs: 18+ specification documents
 
 ## 작성 진행 상황
-- [ ] 문서 구조 정의 및 SPECIFICATION 작성
-- [ ] TODO.md 작성
+- [x] 문서 구조 정의 및 SPECIFICATION 작성
+- [x] TODO.md 작성
+- [x] 활용 사례 조사 및 Phase 10 추가
 - [ ] 각 메인 문서 작성 (00-04)
 - [ ] 컴포넌트별 상세 문서 작성 (05-08)
 - [ ] 구현 세부사항 문서 작성 (09-12)
 - [ ] 실전 가이드 작성 (13-15)
+- [ ] 애플리케이션 분석 작성 (29-34)
 - [ ] 최종 검토 및 업데이트

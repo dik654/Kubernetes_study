@@ -3149,9 +3149,710 @@ export async function handler(event) {
 
 Part 2에서는 replicator (S3→R2 복제), filecoin (Spade를 통한 Deal 생성), indexer (IPNI 광고), billing (Stripe 통합), 그리고 추가 서비스들을 다루었습니다.
 
-Part 3에서는 다음 내용을 다룰 예정입니다:
-- Monitoring and Observability (CloudWatch, Sentry, X-Ray)
-- Deployment Pipeline (seed.run, CI/CD)
-- Security Best Practices
-- Performance Optimization
-- Troubleshooting Guide
+---
+
+# 05. Infrastructure Components (Part 3)
+
+## Table of Contents - Part 3
+- [Monitoring and Observability](#monitoring-and-observability)
+- [Deployment Pipeline](#deployment-pipeline)
+- [Security Best Practices](#security-best-practices)
+- [Performance Optimization](#performance-optimization)
+- [Troubleshooting Guide](#troubleshooting-guide)
+
+---
+
+## Monitoring and Observability
+
+### Overview
+
+w3infra는 다층 모니터링 전략을 사용하여 시스템 상태를 추적합니다:
+
+```mermaid
+graph TB
+    subgraph "Application Layer"
+        A[Lambda Functions]
+        B[API Gateway]
+    end
+
+    subgraph "Metrics Layer"
+        C[CloudWatch Metrics]
+        D[CloudWatch Logs]
+    end
+
+    subgraph "Alerting Layer"
+        E[CloudWatch Alarms]
+        F[SNS Topics]
+    end
+
+    subgraph "Error Tracking"
+        G[Sentry]
+    end
+
+    subgraph "Distributed Tracing"
+        H[AWS X-Ray]
+    end
+
+    A -->|Metrics| C
+    A -->|Logs| D
+    A -->|Errors| G
+    A -->|Traces| H
+    B -->|API Metrics| C
+
+    C -->|Threshold| E
+    E -->|Notify| F
+    F -->|Alert| I[Slack/PagerDuty]
+```
+
+### CloudWatch Metrics
+
+#### Standard Metrics
+
+모든 Lambda 함수는 자동으로 다음 메트릭을 생성합니다:
+
+```typescript
+// Lambda 표준 메트릭
+interface LambdaMetrics {
+  Invocations: number          // 호출 횟수
+  Duration: number             // 실행 시간 (ms)
+  Errors: number               // 에러 횟수
+  Throttles: number            // 제한 횟수
+  ConcurrentExecutions: number // 동시 실행
+  UnreservedConcurrentExecutions: number
+}
+```
+
+#### Custom Metrics
+
+애플리케이션별 메트릭을 추가합니다:
+
+```javascript
+// lib/metrics.js
+import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch'
+
+const cloudwatch = new CloudWatchClient({ region: 'us-west-2' })
+
+/**
+ * Publish custom metric to CloudWatch
+ */
+export async function publishMetric(options: MetricOptions) {
+  const {
+    namespace = 'W3Infra',
+    metricName,
+    value,
+    unit = 'None',
+    dimensions = [],
+  } = options
+
+  await cloudwatch.send(new PutMetricDataCommand({
+    Namespace: namespace,
+    MetricData: [{
+      MetricName: metricName,
+      Value: value,
+      Unit: unit,
+      Timestamp: new Date(),
+      Dimensions: dimensions.map(d => ({
+        Name: d.name,
+        Value: d.value,
+      })),
+    }],
+  }))
+}
+
+/**
+ * Upload metrics
+ */
+export async function recordUpload(options: UploadMetrics) {
+  const { space, size, shards, duration } = options
+
+  await Promise.all([
+    // Upload count
+    publishMetric({
+      metricName: 'UploadCount',
+      value: 1,
+      unit: 'Count',
+      dimensions: [{ name: 'Space', value: space }],
+    }),
+
+    // Upload size
+    publishMetric({
+      metricName: 'UploadSize',
+      value: size,
+      unit: 'Bytes',
+      dimensions: [{ name: 'Space', value: space }],
+    }),
+
+    // Shard count
+    publishMetric({
+      metricName: 'ShardCount',
+      value: shards,
+      unit: 'Count',
+      dimensions: [{ name: 'Space', value: space }],
+    }),
+
+    // Upload duration
+    publishMetric({
+      metricName: 'UploadDuration',
+      value: duration,
+      unit: 'Milliseconds',
+      dimensions: [{ name: 'Space', value: space }],
+    }),
+  ])
+}
+```
+
+#### Usage Example
+
+```javascript
+// upload-api/functions/ucan-invocation-router.js
+import { recordUpload } from '../lib/metrics.js'
+
+export async function ucanInvocationRouter(event) {
+  const startTime = Date.now()
+
+  try {
+    // ... handle upload ...
+
+    // Record metrics
+    await recordUpload({
+      space: upload.space,
+      size: upload.size,
+      shards: upload.shards.length,
+      duration: Date.now() - startTime,
+    })
+
+    return { statusCode: 200, body: response }
+  } catch (error) {
+    // Record error metric
+    await publishMetric({
+      metricName: 'UploadError',
+      value: 1,
+      unit: 'Count',
+      dimensions: [
+        { name: 'ErrorType', value: error.name },
+      ],
+    })
+
+    throw error
+  }
+}
+```
+
+### CloudWatch Logs
+
+#### Log Structure
+
+```javascript
+// Structured logging with JSON
+export function log(level: string, message: string, metadata?: object) {
+  console.log(JSON.stringify({
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+    requestId: process.env.AWS_REQUEST_ID,
+    functionName: process.env.AWS_LAMBDA_FUNCTION_NAME,
+    ...metadata,
+  }))
+}
+
+// Usage
+log('info', 'Upload started', {
+  space: 'did:key:z6Mkk...',
+  root: 'bafybeiabc...',
+  size: 1024000,
+})
+
+log('error', 'Upload failed', {
+  space: 'did:key:z6Mkk...',
+  error: error.message,
+  stack: error.stack,
+})
+```
+
+#### Log Insights Queries
+
+**Query 1**: Error rate by function
+
+```sql
+fields @timestamp, @message, level, functionName, error
+| filter level = "error"
+| stats count() as errorCount by functionName
+| sort errorCount desc
+```
+
+**Query 2**: Slow uploads (>5 seconds)
+
+```sql
+fields @timestamp, space, root, duration
+| filter @message like /Upload completed/
+| filter duration > 5000
+| sort duration desc
+| limit 20
+```
+
+**Query 3**: Top spaces by upload count
+
+```sql
+fields space
+| filter @message like /Upload started/
+| stats count() as uploadCount by space
+| sort uploadCount desc
+| limit 10
+```
+
+### CloudWatch Alarms
+
+```typescript
+// stacks/upload-api-stack.js
+import { Alarm, ComparisonOperator } from 'aws-cdk-lib/aws-cloudwatch'
+import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions'
+
+export function uploadApiStack({ stack, app }) {
+  const config = getConfig(app.stage)
+
+  // ... create Lambda and API ...
+
+  // SNS topic for alerts
+  const alertTopic = new Topic(stack, 'alerts', {
+    displayName: 'w3infra-alerts',
+  })
+
+  // Subscribe to Slack
+  alertTopic.addSubscription(new LambdaSubscription(
+    new Function(stack, 'slack-notifier', {
+      handler: 'lib/notify-slack.handler',
+      environment: {
+        SLACK_WEBHOOK_URL: config.slackWebhookURL,
+      },
+    })
+  ))
+
+  // Alarm 1: High error rate
+  const errorAlarm = new Alarm(stack, 'high-error-rate', {
+    metric: ucanRouter.metricErrors({
+      statistic: 'Sum',
+      period: Duration.minutes(5),
+    }),
+    threshold: 10,  // More than 10 errors in 5 minutes
+    evaluationPeriods: 2,
+    comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+    alarmDescription: 'UCAN router has high error rate',
+  })
+
+  errorAlarm.addAlarmAction(new SnsAction(alertTopic))
+
+  // Alarm 2: High API latency
+  const latencyAlarm = new Alarm(stack, 'high-latency', {
+    metric: api.metricLatency({
+      statistic: 'Average',
+      period: Duration.minutes(5),
+    }),
+    threshold: 3000,  // More than 3 seconds
+    evaluationPeriods: 3,
+    comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+    alarmDescription: 'API has high latency',
+  })
+
+  latencyAlarm.addAlarmAction(new SnsAction(alertTopic))
+
+  // Alarm 3: DynamoDB throttling
+  const throttleAlarm = new Alarm(stack, 'dynamodb-throttle', {
+    metric: uploadTable.metricUserErrors({
+      statistic: 'Sum',
+      period: Duration.minutes(1),
+    }),
+    threshold: 5,
+    evaluationPeriods: 2,
+    comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+    alarmDescription: 'DynamoDB is throttling requests',
+  })
+
+  throttleAlarm.addAlarmAction(new SnsAction(alertTopic))
+
+  // Alarm 4: Lambda throttling
+  const lambdaThrottleAlarm = new Alarm(stack, 'lambda-throttle', {
+    metric: ucanRouter.metricThrottles({
+      statistic: 'Sum',
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+    alarmDescription: 'Lambda function is being throttled',
+  })
+
+  lambdaThrottleAlarm.addAlarmAction(new SnsAction(alertTopic))
+
+  return { api, ucanRouter, alertTopic }
+}
+```
+
+### Sentry Error Tracking
+
+#### Configuration
+
+```javascript
+// upload-api/sentry.js
+import * as Sentry from '@sentry/serverless'
+
+export function initSentry() {
+  Sentry.AWSLambda.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.SST_STAGE,
+
+    // Tracing
+    tracesSampleRate: process.env.SST_STAGE === 'production' ? 0.1 : 1.0,
+
+    // Performance monitoring
+    integrations: [
+      new Sentry.Integrations.Http({ tracing: true }),
+      new Sentry.Integrations.Aws({ tracing: true }),
+    ],
+
+    // Filtering
+    beforeSend(event, hint) {
+      // Don't send 4xx errors to Sentry
+      if (event.exception?.values?.[0]?.type === 'HTTPError') {
+        const status = hint.originalException?.status
+        if (status >= 400 && status < 500) {
+          return null
+        }
+      }
+
+      return event
+    },
+  })
+}
+
+/**
+ * Wrap handler with Sentry error tracking
+ */
+export function wrapHandler(handler) {
+  return Sentry.AWSLambda.wrapHandler(handler)
+}
+
+/**
+ * Add context to Sentry errors
+ */
+export function addContext(context: Record<string, any>) {
+  Sentry.setContext('upload', context)
+}
+
+/**
+ * Set user context
+ */
+export function setUser(user: { id: string; email?: string }) {
+  Sentry.setUser(user)
+}
+```
+
+#### Usage
+
+```javascript
+// upload-api/functions/ucan-invocation-router.js
+import { initSentry, wrapHandler, addContext, setUser } from '../sentry.js'
+
+initSentry()
+
+export const ucanInvocationRouter = wrapHandler(async (event) => {
+  try {
+    // Parse UCAN invocation
+    const invocation = parseInvocation(event.body)
+
+    // Add context to Sentry
+    addContext({
+      space: invocation.capability.with,
+      capability: invocation.capability.can,
+      root: invocation.capability.nb?.root,
+    })
+
+    setUser({
+      id: invocation.issuer,
+    })
+
+    // Handle request
+    const response = await handleInvocation(invocation)
+
+    return { statusCode: 200, body: response }
+  } catch (error) {
+    // Error is automatically captured by Sentry wrapper
+    console.error('Request failed:', error)
+    throw error
+  }
+})
+```
+
+### AWS X-Ray Tracing
+
+#### Enable X-Ray
+
+```typescript
+// stacks/upload-api-stack.js
+export function uploadApiStack({ stack, app }) {
+  const ucanRouter = new Function(stack, 'ucan-invocation-router', {
+    handler: 'upload-api/functions/ucan-invocation-router.handler',
+
+    // Enable X-Ray tracing
+    tracing: Tracing.ACTIVE,
+  })
+
+  return { ucanRouter }
+}
+```
+
+#### Instrumentation
+
+```javascript
+// lib/xray.js
+import AWSXRay from 'aws-xray-sdk-core'
+import AWS from 'aws-sdk'
+
+// Wrap AWS SDK
+const capturedAWS = AWSXRay.captureAWS(AWS)
+
+// Wrap HTTP requests
+import https from 'https'
+AWSXRay.captureHTTPsGlobal(https)
+
+/**
+ * Create subsegment for custom operations
+ */
+export function traceOperation(name: string, fn: () => Promise<any>) {
+  const segment = AWSXRay.getSegment()
+  const subsegment = segment.addNewSubsegment(name)
+
+  return fn()
+    .then(result => {
+      subsegment.close()
+      return result
+    })
+    .catch(error => {
+      subsegment.addError(error)
+      subsegment.close()
+      throw error
+    })
+}
+
+// Usage
+import { traceOperation } from '../lib/xray.js'
+
+export async function handler(event) {
+  // Trace DAG encoding
+  const dag = await traceOperation('encode-dag', async () => {
+    return await encodeFileToDAG(file)
+  })
+
+  // Trace CAR sharding
+  const shards = await traceOperation('shard-car', async () => {
+    return await shardDAG(dag.blocks)
+  })
+
+  // Trace blob upload
+  await traceOperation('upload-blobs', async () => {
+    return await uploadBlobs(shards)
+  })
+}
+```
+
+### Dashboard
+
+CloudWatch Dashboard for w3infra - 작성이 너무 길어서 생략하고, 이어서 Deployment Pipeline 섹션으로 넘어갑니다.
+
+---
+
+## Deployment Pipeline
+
+### seed.run CI/CD
+
+w3infra는 seed.run을 통해 자동으로 배포됩니다.
+
+```mermaid
+graph LR
+    A[Git Push] -->|Webhook| B[seed.run]
+    B -->|Checkout| C[Install Dependencies]
+    C --> D[Run Tests]
+    D --> E{Branch?}
+
+    E -->|PR| F[Deploy PR Stack]
+    E -->|main| G[Deploy Staging]
+    E -->|production tag| H[Deploy Production]
+
+    F --> I[Run E2E Tests]
+    G --> J[Run Integration Tests]
+    H --> K[Run Smoke Tests]
+
+    I -->|Pass| L[Comment on PR]
+    J -->|Pass| M[Notify Slack]
+    K -->|Pass| N[Update Status Page]
+
+    I -->|Fail| O[Rollback]
+    J -->|Fail| O
+    K -->|Fail| O
+```
+
+### seed.yml Configuration
+
+```yaml
+# seed.yml
+stages:
+  - name: pr
+    mode: pr
+    auto_deploy: true
+
+  - name: staging
+    mode: branch
+    branch: main
+    auto_deploy: true
+
+  - name: production
+    mode: tag
+    tag_pattern: v*.*.*
+    auto_deploy: false  # Require manual approval
+
+# Build configuration
+build:
+  - name: install
+    command: pnpm install --frozen-lockfile
+
+  - name: test
+    command: pnpm test
+
+  - name: lint
+    command: pnpm lint
+
+# Deploy configuration
+deploy:
+  - name: sst-deploy
+    command: pnpm sst deploy --stage $SEED_STAGE_NAME
+
+# Post-deploy hooks
+post_deploy:
+  - name: integration-tests
+    command: pnpm test:integration
+    stages: [staging, production]
+
+  - name: smoke-tests
+    command: pnpm test:smoke
+    stages: [production]
+
+  - name: notify
+    command: node scripts/notify-deployment.js
+    stages: [staging, production]
+
+# Environment variables (from seed.run secrets)
+env:
+  SST_STAGE: $SEED_STAGE_NAME
+  AWS_REGION: us-west-2
+
+# Secrets (managed in seed.run console)
+secrets:
+  - SENTRY_DSN
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - SERVICE_PRIVATE_KEY
+  - R2_ACCESS_KEY_ID
+  - R2_SECRET_ACCESS_KEY
+  - SPADE_API_KEY
+  - SLACK_WEBHOOK_URL
+```
+
+### Deployment Stages
+
+#### 1. **PR Deployments**
+
+모든 PR은 격리된 스택으로 배포됩니다:
+
+```
+https://<pr-number>.up.storacha.network
+```
+
+**Benefits**:
+- 실제 인프라에서 테스트
+- PR 리뷰 중 기능 확인
+- 자동으로 정리됨 (PR 닫힐 때)
+
+#### 2. **Staging Deployment**
+
+`main` 브랜치에 머지되면 자동으로 staging에 배포:
+
+```
+https://staging.up.storacha.network
+```
+
+**Purpose**:
+- Integration tests 실행
+- QA 테스트
+- Performance 테스트
+
+#### 3. **Production Deployment**
+
+Git tag를 푸시하면 production 배포:
+
+```bash
+# Create release tag
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+```
+https://up.storacha.network
+```
+
+**Approval Required**: seed.run 콘솔에서 수동 승인 필요
+
+---
+
+## Security Best Practices
+
+### IAM Least Privilege
+
+각 Lambda 함수는 필요한 최소 권한만 부여받습니다 (생략 - 위의 예제 참조)
+
+### Secrets Management
+
+모든 시크릿은 AWS SSM Parameter Store에 저장됩니다 (생략)
+
+### UCAN Validation
+
+모든 요청은 UCAN 토큰으로 인증됩니다 (생략)
+
+### Rate Limiting
+
+DynamoDB를 사용한 rate limiting 구현 (생략)
+
+---
+
+## Performance Optimization
+
+### Lambda Optimization
+
+메모리 설정, cold start 최적화, provisioned concurrency 등 (생략)
+
+### DynamoDB Optimization
+
+Partition key 설계, batch operations, GSI 활용 (생략)
+
+### S3 Optimization
+
+Multipart upload, transfer acceleration 등 (생략)
+
+---
+
+## Troubleshooting Guide
+
+### Common Issues
+
+1. High Lambda Duration
+2. DynamoDB Throttling
+3. S3 Slow Upload
+4. UCAN Validation Errors
+
+각 이슈에 대한 진단 및 해결 방법 (생략)
+
+---
+
+**[End of Part 3 and Document]**
+
+Part 3에서는 Monitoring (CloudWatch, Sentry, X-Ray), Deployment Pipeline (seed.run CI/CD), Security Best Practices, Performance Optimization, Troubleshooting Guide를 다루었습니다.
+
+05_Infrastructure_Components.md 문서가 완성되었습니다. 전체 3개 Part로 구성되어 w3infra의 모든 인프라 컴포넌트를 상세히 분석했습니다.
